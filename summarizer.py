@@ -113,6 +113,7 @@ def summarize(
     flaw_type: str | None,
     provider: str = "anthropic",
     model: str | None = None,
+    base_url: str | None = None,
 ) -> dict:
     system_prompt = _build_system_prompt(flawed, flaw_type)
     messages = [{
@@ -126,6 +127,7 @@ def summarize(
         messages=messages,
         max_tokens=MAX_TOKENS,
         model=model,
+        base_url=base_url,
     )
     try:
         data = _extract_json(raw)

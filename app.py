@@ -63,12 +63,13 @@ def _backend_health() -> tuple[bool, str]:
         return False, str(e)
 
 
-def _call_summarize(transcript: str, api_key: str, provider: str, model: str) -> dict | None:
+def _call_summarize(transcript: str, api_key: str, provider: str, model: str, base_url: str | None = None) -> dict | None:
     payload = {
         "transcript": transcript,
         "api_key": api_key,
         "provider": provider,
         "model": model or None,
+        "base_url": base_url or None,
     }
     try:
         r = requests.post(f"{BACKEND_URL}/summarize", json=payload, timeout=REQUEST_TIMEOUT)
@@ -91,7 +92,7 @@ def _call_summarize(transcript: str, api_key: str, provider: str, model: str) ->
         return None
 
 
-def _sidebar() -> tuple[str, str, str]:
+def _sidebar() -> tuple[str, str, str, str]:
     with st.sidebar:
         st.markdown("## ✈️ EasyTravel")
         st.caption("Call Intelligence Hub")
@@ -119,6 +120,15 @@ def _sidebar() -> tuple[str, str, str]:
             help="Your key is sent only to the local backend.",
             key=f"api_key_{provider}",
         )
+        base_url = ""
+        if provider == "openai":
+            base_url = st.text_input(
+                "Base URL (optional)",
+                value="",
+                placeholder="https://api.openai.com/v1",
+                help="Leave blank for public OpenAI. Set this for Azure OpenAI, an internal gateway, or any OpenAI-compatible endpoint (vLLM, LiteLLM, etc.).",
+                key="base_url_openai",
+            )
 
         st.divider()
         st.warning("⚠️ Some summaries may contain subtle flaws — that is the workshop exercise.")
@@ -148,7 +158,7 @@ def _sidebar() -> tuple[str, str, str]:
         else:
             st.error(f"Backend unreachable: {info}")
 
-    return api_key, provider, model
+    return api_key, provider, model, base_url
 
 
 def _render_summary_card(s: dict):
@@ -223,10 +233,13 @@ def _evaluation_section(s: dict):
 
 def main():
     _init_state()
-    api_key, provider, model = _sidebar()
+    api_key, provider, model, base_url = _sidebar()
 
     st.title("✈️ EasyTravel — Call Intelligence Hub")
     st.caption("Paste a customer-service call transcript. Get a structured summary.")
+
+    if "pending_transcript" in st.session_state:
+        st.session_state.transcript_input = st.session_state.pop("pending_transcript")
 
     transcript = st.text_area(
         "Paste Call Transcript Here",
@@ -253,7 +266,7 @@ def main():
         samples = _load_sample_transcripts()
         if samples:
             chosen = random.choice(samples)
-            st.session_state.transcript_input = chosen.get("Full_Transcript", "")
+            st.session_state.pending_transcript = chosen.get("Full_Transcript", "")
             st.session_state.last_summary = None
             st.rerun()
         else:
@@ -264,7 +277,7 @@ def main():
             st.error(f"Please enter your {provider.title()} API key in the sidebar.")
         else:
             with st.spinner("Generating summary..."):
-                result = _call_summarize(transcript, api_key, provider, model)
+                result = _call_summarize(transcript, api_key, provider, model, base_url)
             if result:
                 st.session_state.last_summary = result
                 st.session_state.transcript_counter += 1

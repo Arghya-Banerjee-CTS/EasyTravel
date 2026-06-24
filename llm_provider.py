@@ -19,6 +19,7 @@ def chat(
     messages: list[dict],
     max_tokens: int = 1024,
     model: str | None = None,
+    base_url: str | None = None,
 ) -> str:
     p = (provider or "anthropic").lower().strip()
     if p not in SUPPORTED_PROVIDERS:
@@ -28,7 +29,7 @@ def chat(
         )
     if p == "anthropic":
         return _call_anthropic(api_key, system_prompt, messages, max_tokens, model or ANTHROPIC_DEFAULT_MODEL)
-    return _call_openai(api_key, system_prompt, messages, max_tokens, model or OPENAI_DEFAULT_MODEL)
+    return _call_openai(api_key, system_prompt, messages, max_tokens, model or OPENAI_DEFAULT_MODEL, base_url)
 
 
 def _call_anthropic(api_key: str, system_prompt: str, messages: list[dict], max_tokens: int, model: str) -> str:
@@ -53,13 +54,16 @@ def _call_anthropic(api_key: str, system_prompt: str, messages: list[dict], max_
         raise HTTPException(status_code=500, detail=f"Anthropic call failed: {e}")
 
 
-def _call_openai(api_key: str, system_prompt: str, messages: list[dict], max_tokens: int, model: str) -> str:
+def _call_openai(api_key: str, system_prompt: str, messages: list[dict], max_tokens: int, model: str, base_url: str | None = None) -> str:
     try:
         from openai import OpenAI, AuthenticationError, APIConnectionError, APIStatusError, RateLimitError
     except ImportError as e:
         raise HTTPException(status_code=500, detail=f"openai package not installed: {e}")
     try:
-        client = OpenAI(api_key=api_key)
+        client_kwargs = {"api_key": api_key}
+        if base_url and base_url.strip():
+            client_kwargs["base_url"] = base_url.strip()
+        client = OpenAI(**client_kwargs)
         oai_messages = [{"role": "system", "content": system_prompt}]
         oai_messages.extend(messages)
         resp = client.chat.completions.create(

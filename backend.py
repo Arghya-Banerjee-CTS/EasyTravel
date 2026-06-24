@@ -30,6 +30,7 @@ class SummarizeRequest(BaseModel):
     api_key: str = Field(..., min_length=8)
     provider: str = "anthropic"
     model: Optional[str] = None
+    base_url: Optional[str] = None
 
 
 class ContextBlock(BaseModel):
@@ -54,6 +55,7 @@ class BatchRequest(BaseModel):
     transcripts: list[str] = Field(..., min_length=1)
     provider: str = "anthropic"
     model: Optional[str] = None
+    base_url: Optional[str] = None
 
 
 class BatchResultItem(BaseModel):
@@ -78,18 +80,18 @@ def health():
     return {"status": "ok"}
 
 
-def _summarize_one(transcript: str, api_key: str, provider: str, model: str | None) -> dict:
+def _summarize_one(transcript: str, api_key: str, provider: str, model: str | None, base_url: str | None = None) -> dict:
     flawed = should_inject_flaw()
     flaw_type = pick_flaw_type() if flawed else None
     log_flaw_decision(transcript, flawed, flaw_type)
-    result = summarize(transcript, api_key, flawed, flaw_type, provider=provider, model=model)
+    result = summarize(transcript, api_key, flawed, flaw_type, provider=provider, model=model, base_url=base_url)
     result["is_flawed"] = flawed
     return result
 
 
 @app.post("/summarize", response_model=SummarizeResponse)
 def summarize_endpoint(req: SummarizeRequest):
-    return _summarize_one(req.transcript, req.api_key, req.provider, req.model)
+    return _summarize_one(req.transcript, req.api_key, req.provider, req.model, req.base_url)
 
 
 @app.post("/batch", response_model=BatchResponse)
@@ -97,7 +99,7 @@ def batch_endpoint(req: BatchRequest):
     results = []
     flawed_count = 0
     for i, t in enumerate(req.transcripts):
-        r = _summarize_one(t, req.api_key, req.provider, req.model)
+        r = _summarize_one(t, req.api_key, req.provider, req.model, req.base_url)
         if r["is_flawed"]:
             flawed_count += 1
         results.append({"index": i, **r})
