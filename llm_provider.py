@@ -20,6 +20,7 @@ def chat(
     max_tokens: int = 1024,
     model: str | None = None,
     base_url: str | None = None,
+    api_version: str | None = None,
 ) -> str:
     p = (provider or "anthropic").lower().strip()
     if p not in SUPPORTED_PROVIDERS:
@@ -29,7 +30,7 @@ def chat(
         )
     if p == "anthropic":
         return _call_anthropic(api_key, system_prompt, messages, max_tokens, model or ANTHROPIC_DEFAULT_MODEL)
-    return _call_openai(api_key, system_prompt, messages, max_tokens, model or OPENAI_DEFAULT_MODEL, base_url)
+    return _call_openai(api_key, system_prompt, messages, max_tokens, model or OPENAI_DEFAULT_MODEL, base_url, api_version)
 
 
 def _call_anthropic(api_key: str, system_prompt: str, messages: list[dict], max_tokens: int, model: str) -> str:
@@ -54,16 +55,37 @@ def _call_anthropic(api_key: str, system_prompt: str, messages: list[dict], max_
         raise HTTPException(status_code=500, detail=f"Anthropic call failed: {e}")
 
 
-def _call_openai(api_key: str, system_prompt: str, messages: list[dict], max_tokens: int, model: str, base_url: str | None = None) -> str:
+def _is_azure_endpoint(base_url: str | None, api_version: str | None) -> bool:
+    if api_version and api_version.strip():
+        return True
+    if base_url and "azure.com" in base_url.lower():
+        return True
+    return False
+
+
+def _call_openai(api_key: str, system_prompt: str, messages: list[dict], max_tokens: int, model: str, base_url: str | None = None, api_version: str | None = None) -> str:
     try:
-        from openai import OpenAI, AuthenticationError, APIConnectionError, APIStatusError, RateLimitError
+        from openai import AuthenticationError, APIConnectionError, APIStatusError, RateLimitError
     except ImportError as e:
         raise HTTPException(status_code=500, detail=f"openai package not installed: {e}")
     try:
-        client_kwargs = {"api_key": api_key}
-        if base_url and base_url.strip():
-            client_kwargs["base_url"] = base_url.strip()
-        client = OpenAI(**client_kwargs)
+        if _is_azure_endpoint(base_url, api_version):
+            from openai import AzureOpenAI
+            if not base_url or not base_url.strip():
+                raise HTTPException(status_code=400, detail="Azure OpenAI requires a Base URL (azure_endpoint).")
+            if not api_version or not api_version.strip():
+                raise HTTPException(status_code=400, detail="Azure OpenAI requires an API Version (e.g. 2024-10-21).")
+            client = AzureOpenAI(
+                api_key=api_key,
+                azure_endpoint=base_url.strip(),
+                api_version=api_version.strip(),
+            )
+        else:
+            from openai import OpenAI
+            client_kwargs = {"api_key": api_key}
+            if base_url and base_url.strip():
+                client_kwargs["base_url"] = base_url.strip()
+            client = OpenAI(**client_kwargs)
         oai_messages = [{"role": "system", "content": system_prompt}]
         oai_messages.extend(messages)
         resp = client.chat.completions.create(

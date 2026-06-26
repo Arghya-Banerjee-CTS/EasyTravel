@@ -1,30 +1,34 @@
 """Summarization logic for EasyTravel call transcripts.
 
-Builds a structured JSON-shaped prompt and dispatches to the selected LLM
-provider via llm_provider.chat. Parses the JSON response into the 5 fields
-required by the API: customer_issue, resolution_status, action_items,
-sentiment, key_details.
+Produces a single comprehensive paragraph (`call_summary`) describing the call.
 """
 from __future__ import annotations
-import json
 import re
 from fastapi import HTTPException
 
 from flaw_injector import get_flaw_prompt
 from llm_provider import chat as llm_chat
 
-MAX_TOKENS = 1024
+MAX_TOKENS = 600
 
 SYSTEM_PROMPT_BASE = (
     "You are a call-centre summarization assistant for EasyTravel, a travel booking company. "
-    "Given a transcript of a customer-service call (agent and customer turns), produce a "
-    "concise, structured summary as STRICT JSON with the following keys:\n"
-    "  customer_issue: string (one or two sentences describing what the customer needed)\n"
-    "  resolution_status: one of 'Resolved', 'Resolved with workaround', 'Pending', 'Escalated', 'Unresolved'\n"
-    "  action_items: array of strings (each a concrete commitment by either party; empty array if none)\n"
-    "  sentiment: one of 'Satisfied', 'Neutral', 'Frustrated', 'Distressed'\n"
-    "  key_details: string (booking refs, names, amounts, dates, escalation IDs)\n\n"
-    "Return ONLY the JSON object, no prose, no markdown fences."
+    "Given a transcript of a customer-service call (agent and customer turns), produce a SINGLE "
+    "comprehensive paragraph that captures the entire call. The paragraph must read like a "
+    "professional case note and include, woven naturally into the prose:\n"
+    "- the customer's name and the agent's name\n"
+    "- the customer's issue or request\n"
+    "- relevant booking references, flight numbers, routes, dates, amounts, and IDs\n"
+    "- what the agent did, any commitments made (callbacks, emails, refunds, escalations) with timeframes\n"
+    "- the final resolution status (Resolved / Resolved with workaround / Pending / Escalated / Unresolved)\n\n"
+    "Match the style and level of detail of these examples:\n"
+    "Example: \"Customer Rohan Mehta requested cancellation of flight ET-4521 (BLR-DEL, 15 Jul) due to a "
+    "medical reason. Agent Priya waived the cancellation fee on medical grounds and confirmed a full refund "
+    "of Rs. 4,500 within 7 business days. Customer agreed to email the medical certificate within 7 days. Resolved.\"\n"
+    "Example: \"Customer Vikram Iyer reported missing checked-in baggage from flight ET-2104 (DXB-MAA), PIR "
+    "MAA-9981. Bag contains important medicines. Agent Ananya initiated Rs. 5,000 interim allowance and "
+    "escalated to Senior Supervisor Manish Khanna (ESC-44217) with a 4-hour callback SLA. Escalated.\"\n\n"
+    "Return ONLY the paragraph text. No JSON, no headings, no bullet points, no markdown."
 )
 
 
@@ -35,33 +39,13 @@ def _build_system_prompt(flawed: bool, flaw_type: str | None) -> str:
     return SYSTEM_PROMPT_BASE + "\n\n" + flaw_instruction
 
 
-def _extract_json(text: str) -> dict:
+def _clean_summary(text: str) -> str:
     text = text.strip()
     if text.startswith("```"):
-        text = re.sub(r"^```(?:json)?", "", text, flags=re.IGNORECASE).strip()
+        text = re.sub(r"^```(?:\w+)?", "", text).strip()
         text = re.sub(r"```$", "", text).strip()
-    start = text.find("{")
-    end = text.rfind("}")
-    if start == -1 or end == -1 or end <= start:
-        raise ValueError(f"No JSON object found in model output: {text[:200]}")
-    snippet = text[start : end + 1]
-    return json.loads(snippet)
-
-
-def _coerce_fields(data: dict) -> dict:
-    out = {
-        "customer_issue": str(data.get("customer_issue", "")).strip() or "Not stated.",
-        "resolution_status": str(data.get("resolution_status", "")).strip() or "Pending",
-        "action_items": [],
-        "sentiment": str(data.get("sentiment", "")).strip() or "Neutral",
-        "key_details": str(data.get("key_details", "")).strip() or "",
-    }
-    raw_items = data.get("action_items", [])
-    if isinstance(raw_items, list):
-        out["action_items"] = [str(x).strip() for x in raw_items if str(x).strip()]
-    elif isinstance(raw_items, str) and raw_items.strip():
-        out["action_items"] = [raw_items.strip()]
-    return out
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
 
 
 def _derive_context(transcript: str) -> dict:
@@ -114,11 +98,12 @@ def summarize(
     provider: str = "anthropic",
     model: str | None = None,
     base_url: str | None = None,
+    api_version: str | None = None,
 ) -> dict:
     system_prompt = _build_system_prompt(flawed, flaw_type)
     messages = [{
         "role": "user",
-        "content": f"Transcript:\n\n{transcript.strip()}\n\nProduce the JSON summary now.",
+        "content": f"Transcript:\n\n{transcript.strip()}\n\nWrite the single-paragraph summary now.",
     }]
     raw = llm_chat(
         provider=provider,
@@ -128,12 +113,12 @@ def summarize(
         max_tokens=MAX_TOKENS,
         model=model,
         base_url=base_url,
+        api_version=api_version,
     )
-    try:
-        data = _extract_json(raw)
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Model did not return valid JSON: {e}")
-
-    fields = _coerce_fields(data)
-    fields["context"] = _derive_context(transcript)
-    return fields
+    summary = _clean_summary(raw)
+    if not summary:
+        raise HTTPException(status_code=502, detail="Model returned an empty summary.")
+    return {
+        "call_summary": summary,
+        "context": _derive_context(transcript),
+    }

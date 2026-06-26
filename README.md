@@ -1,69 +1,88 @@
 # EasyTravel — Call Intelligence Hub
 
-An AI Assurance Workshop application. Participants paste customer-service call transcripts, see AI-generated structured summaries, and identify subtle flaws.
+## What this bot does (in simple language)
 
-## Quickstart (Windows)
+EasyTravel is a workshop app for spotting mistakes in AI-generated summaries.
 
-1. Ensure Python 3.10+ is installed.
-2. Open a terminal inside this `easytravel/` folder.
-3. Run:
+1. You paste a customer-service phone call transcript (agent + customer talking).
+2. The bot sends it to an LLM (Claude or OpenAI/GPT) and asks for a one-paragraph summary of the call — who called, what they wanted, what the agent did, and how it ended.
+3. The summary comes back and is shown in a clean card on the screen.
+
+## What's inside
+
+- [app.py](app.py) — Streamlit UI (the screen you actually use)
+- [backend.py](backend.py) — FastAPI server with `/summarize` and `/batch` endpoints
+- [summarizer.py](summarizer.py) — prompt + LLM call to produce the summary paragraph
+- [flaw_injector.py](flaw_injector.py) — decides whether to sabotage each summary and how
+- [llm_provider.py](llm_provider.py) — talks to Anthropic / OpenAI / Azure OpenAI
+- [config_store.py](config_store.py) — reads/writes `config.yaml` (your saved API key + provider)
+- [run.py](run.py) — starts backend + frontend with one command
+- `sample_data/EasyTravel_Sample_Transcripts.xlsx` — 10 sample calls
+
+## Requirements
+
+- Python 3.13.7
+- An API key for one of:
+  - Anthropic — https://console.anthropic.com
+  - OpenAI — https://platform.openai.com
+  - Azure OpenAI (your endpoint + API version)
+
+## Run it — exact commands
+
+Open a terminal **inside the `easytravel/` folder**, then:
+
+### Windows (PowerShell or CMD)
 
 ```
+python -m venv .venv
+.venv\Scripts\activate
 pip install -r requirements.txt
 python run.py
 ```
 
-Or double-click `start_easytravel.bat` from File Explorer.
-
-The app opens automatically at **http://localhost:8502**. The backend runs at **http://localhost:8002**.
-
-## Quickstart (Mac / Linux)
+### Mac / Linux
 
 ```
-chmod +x start_easytravel.sh
-./start_easytravel.sh
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+python run.py
 ```
 
-## Getting an Anthropic API key
+That's it. `run.py` will:
 
-Sign in at https://console.anthropic.com and create a key. Paste it into the sidebar of the running app. The key is sent only to your local backend.
+1. Generate the sample transcripts Excel (first run only).
+2. Start the backend on **http://localhost:8002**.
+3. Wait until the backend is healthy.
+4. Open the UI at **http://localhost:8502**.
 
-## What happens on first run
+Press **Ctrl+C** in the terminal to stop everything.
 
-- The sample transcripts workbook is generated into `sample_data/`.
-- No PDFs, no embeddings, no model downloads — this app does not use RAG.
+## First-time setup inside the app
 
-## Using the sample Excel
+1. The UI opens at http://localhost:8502.
+2. In the **left sidebar**, pick a provider (Anthropic or OpenAI).
+3. Paste your API key.
+4. (Azure OpenAI only) fill in **Base URL** (your resource endpoint) and **API Version** (e.g. `2024-10-21`).
+5. Click **Save Configuration**. Your settings persist in `config.yaml`.
 
-`sample_data/EasyTravel_Sample_Transcripts.xlsx` has three sheets:
-- **Sample Transcripts** — 10 realistic call transcripts (15-25 turns each).
-- **Evaluation Sheet** — blank columns for AI summary + your verdict.
-- **Answer Key** — hidden by default; unhide via Excel to see the ground truth and known flaw type per scenario.
+## How to use it
 
-## Workshop exercise
+1. Click **Load Sample Transcript** to pull a random call from the sample workbook, or paste your own transcript into the big box.
+2. Click **Generate Summary**.
+3. Read the summary card. Compare it carefully against the transcript.
+4. Decide: did the AI summarize correctly, or sneak in a flaw?
 
-1. Click **📂 Load Sample Transcript** in the app to pick a random one, or paste your own.
-2. Click **🎯 Summarize Call**.
-3. Read the structured summary card. Compare against the transcript.
-4. Mark it Accurate or Flawed, add notes, and **Submit Evaluation**.
-5. Repeat with several transcripts; review your submissions in the sidebar.
+## Useful endpoints (for testing the backend directly)
 
-## Facilitator notes
-
-- Approximately **40%** of summaries are intentionally flawed.
-- Flaw types: `missed_action_item`, `wrong_sentiment`, `wrong_resolution`, `fabricated_detail`.
-- A per-request log is written to `flaw_log.jsonl` in this folder.
-- To adjust the rate, edit `FLAW_RATE` in `flaw_injector.py`.
-
-## Programmatic access
-
-```python
-from api_client import EasyTravelClient
-
-et = EasyTravelClient(api_key="sk-ant-...")
-result = et.summarize(transcript_text)
-print(result["resolution_status"])
-print(result["action_items"])
+```
+GET  http://localhost:8002/health
+POST http://localhost:8002/summarize    # body: { "transcript": "...", "api_key": "...", "provider": "openai" }
+POST http://localhost:8002/batch        # body: { "transcripts": ["...", "..."], ... }
 ```
 
-See `api_client.py` for the full surface (`summarize`, `summarize_batch`, `health`).
+## Troubleshooting
+
+- **"Backend unreachable"** — `run.py` isn't running, or port 8002 is busy. Stop other processes on that port and re-run.
+- **Azure errors** — both the Base URL and API Version are required for Azure; plain OpenAI needs neither.
+- **Port already in use** — change `BACKEND_PORT` / `FRONTEND_PORT` in [run.py](run.py) (also update `BACKEND_URL` in [app.py](app.py) if you change the backend port).

@@ -14,25 +14,24 @@ EASYTRAVEL_FLAWS = [
 
 FLAW_PROMPTS = {
     "missed_action_item": (
-        "Summarize the transcript. However, deliberately OMIT one specific action item or "
+        "Write the paragraph summary. However, deliberately OMIT one specific action item or "
         "commitment that the agent made (for example: a promised callback, an email to be "
-        "sent, a refund to be processed). Keep the rest of the summary accurate. "
+        "sent, a refund to be processed). Keep everything else accurate. "
         "Do NOT signal that the summary is incomplete."
     ),
     "wrong_sentiment": (
-        "Summarize the transcript. However, mischaracterize the customer's sentiment in a "
-        "subtle way (for example: report 'Satisfied' when the customer was actually "
-        "Frustrated, or 'Neutral' when they were clearly upset, or 'Satisfied' when the "
-        "experience was mixed). Other fields should be accurate. "
+        "Write the paragraph summary. However, mischaracterize the customer's sentiment in a "
+        "subtle way (for example: describe the customer as satisfied when they were actually "
+        "frustrated, or calm when they were clearly upset). Keep everything else accurate. "
         "Do NOT signal that the sentiment is wrong."
     ),
     "wrong_resolution": (
-        "Summarize the transcript. However, state the WRONG resolution status (for example: "
-        "say 'Resolved' when the issue was actually Escalated or Pending, or vice versa). "
-        "Other fields should be accurate. Do NOT signal that the resolution status is wrong."
+        "Write the paragraph summary. However, state the WRONG resolution status at the end "
+        "(for example: say 'Resolved' when the issue was actually Escalated or Pending, or vice "
+        "versa). Keep everything else accurate. Do NOT signal that the resolution status is wrong."
     ),
     "fabricated_detail": (
-        "Summarize the transcript. However, ADD one small plausible-sounding detail that is "
+        "Write the paragraph summary. However, ADD one small plausible-sounding detail that is "
         "not actually present in the transcript (for example: invent a booking reference, "
         "a refund amount, a flight number, or an agent name that was never mentioned). "
         "The fabricated detail must sound realistic. Do NOT signal that the detail is invented."
